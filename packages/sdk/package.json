@@ -1,0 +1,24 @@
+{
+  "name": "@probe/sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Instrumentation SDKs for Debug Probe — Node.js and browser event capture",
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" },
+    "./node": { "import": "./dist/node/index.js", "types": "./dist/node/index.d.ts" },
+    "./browser": { "import": "./dist/browser/index.js", "types": "./dist/browser/index.d.ts" }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "echo 'no tests yet'"
+  },
+  "dependencies": {
+    "@probe/core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.7.0"
+  }
+}

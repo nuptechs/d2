@@ -1,0 +1,66 @@
+{
+  "projectName": "my-app",
+  "outputDir": ".probe-data",
+  "session": {
+    "browser": {
+      "enabled": true,
+      "targetUrl": "http://localhost:3000",
+      "screenshotOnAction": true,
+      "screenshotInterval": 0,
+      "captureConsole": true,
+      "captureDom": false,
+      "headless": false,
+      "viewport": { "width": 1280, "height": 720 }
+    },
+    "network": {
+      "enabled": true,
+      "mode": "proxy",
+      "proxyPort": 8080,
+      "captureBody": true,
+      "maxBodySize": 1048576,
+      "excludeExtensions": [".css", ".js", ".png", ".jpg", ".gif", ".svg", ".woff", ".woff2", ".ico"]
+    },
+    "logs": [
+      {
+        "enabled": true,
+        "source": {
+          "type": "file",
+          "name": "backend-log",
+          "path": "./logs/application.log"
+        },
+        "levels": ["info", "warn", "error", "fatal"]
+      }
+    ],
+    "sdk": {
+      "enabled": true,
+      "captureDbQueries": true,
+      "captureCache": true,
+      "captureCustomSpans": true,
+      "correlationHeader": "x-probe-correlation-id"
+    },
+    "correlation": {
+      "strategies": ["request-id", "temporal", "url-matching"],
+      "temporalWindowMs": 2000,
+      "correlationHeader": "x-probe-correlation-id",
+      "groupTimeoutMs": 30000
+    },
+    "capture": {
+      "maxEventsPerSession": 50000,
+      "maxScreenshots": 500,
+      "maxBodyCaptureSize": 1048576,
+      "redactHeaders": ["authorization", "cookie", "set-cookie", "x-api-key"],
+      "redactBodyFields": ["password", "secret", "token", "creditCard", "ssn"]
+    }
+  },
+  "server": {
+    "port": 7070,
+    "host": "0.0.0.0",
+    "enableWebSocket": true
+  },
+  "storage": {
+    "type": "file",
+    "basePath": ".probe-data",
+    "maxSessions": 100,
+    "maxStorageMb": 512
+  }
+}

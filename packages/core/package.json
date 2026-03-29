@@ -1,0 +1,24 @@
+{
+  "name": "@probe/core",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Core types, ports, event bus, and utilities for Debug Probe",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" },
+    "./types": { "import": "./dist/types/index.js", "types": "./dist/types/index.d.ts" },
+    "./ports": { "import": "./dist/ports/index.js", "types": "./dist/ports/index.d.ts" },
+    "./events": { "import": "./dist/events/index.js", "types": "./dist/events/index.d.ts" },
+    "./utils": { "import": "./dist/utils/index.js", "types": "./dist/utils/index.d.ts" }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "echo 'no tests yet'"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@probe/correlation-engine",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Event correlation engine — groups related events and builds timelines",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "echo 'no tests yet'"
+  },
+  "dependencies": {
+    "@probe/core": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@probe/reporter",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Debug report generation — HTML, JSON, and Markdown formats",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "echo 'no tests yet'"
+  },
+  "dependencies": {
+    "@probe/core": "*",
+    "@probe/correlation-engine": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

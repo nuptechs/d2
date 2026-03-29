@@ -1,0 +1,26 @@
+{
+  "name": "debug-probe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Universal Debug Probe — Runtime capture, correlation, and analysis for any application",
+  "workspaces": [
+    "packages/*",
+    "server"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "npm@10.0.0"
+}

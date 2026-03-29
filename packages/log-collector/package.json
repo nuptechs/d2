@@ -1,0 +1,26 @@
+{
+  "name": "@probe/log-collector",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Log collection adapters for Debug Probe — file tailing, Docker logs, stdout/stderr",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" },
+    "./adapters": { "import": "./dist/adapters/index.js", "types": "./dist/adapters/index.d.ts" },
+    "./parser": { "import": "./dist/parser/log-parser.js", "types": "./dist/parser/log-parser.d.ts" },
+    "./container": { "import": "./dist/container.js", "types": "./dist/container.d.ts" }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "echo 'no tests yet'"
+  },
+  "dependencies": {
+    "@probe/core": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

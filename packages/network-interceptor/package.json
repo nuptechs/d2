@@ -1,0 +1,26 @@
+{
+  "name": "@probe/network-interceptor",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "HTTP traffic capture via proxy and Express middleware for Debug Probe",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" },
+    "./adapters": { "import": "./dist/adapters/index.js", "types": "./dist/adapters/index.d.ts" },
+    "./container": { "import": "./dist/container.js", "types": "./dist/container.d.ts" }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "echo 'no tests yet'"
+  },
+  "dependencies": {
+    "@probe/core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.7.0"
+  }
+}
