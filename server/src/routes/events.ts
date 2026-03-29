@@ -68,10 +68,17 @@ eventsRouter.get('/:id/events', (req: Request, res: Response) => {
 
   const source = req.query['source'] as EventSource | undefined;
   const type = req.query['type'] as string | undefined;
-  const fromTime = req.query['fromTime'] ? parseInt(req.query['fromTime'] as string, 10) : undefined;
-  const toTime = req.query['toTime'] ? parseInt(req.query['toTime'] as string, 10) : undefined;
-  const limit = req.query['limit'] ? parseInt(req.query['limit'] as string, 10) : 500;
-  const offset = req.query['offset'] ? parseInt(req.query['offset'] as string, 10) : 0;
+
+  const rawFromTime = req.query['fromTime'] ? parseInt(req.query['fromTime'] as string, 10) : undefined;
+  const rawToTime = req.query['toTime'] ? parseInt(req.query['toTime'] as string, 10) : undefined;
+  const rawLimit = req.query['limit'] ? parseInt(req.query['limit'] as string, 10) : 500;
+  const rawOffset = req.query['offset'] ? parseInt(req.query['offset'] as string, 10) : 0;
+
+  // Validate numeric params
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 10_000) : 500;
+  const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+  const fromTime = rawFromTime !== undefined && Number.isFinite(rawFromTime) ? rawFromTime : undefined;
+  const toTime = rawToTime !== undefined && Number.isFinite(rawToTime) ? rawToTime : undefined;
 
   const events = manager.getEvents(sessionId, { source, type, fromTime, toTime, limit, offset });
   res.json({ events, total: events.length });

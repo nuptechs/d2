@@ -20,6 +20,9 @@ export abstract class BrowserAgentPort {
   abstract close(): Promise<void>;
   abstract isLaunched(): boolean;
 
+  // ---- Session ----
+  abstract setSessionId(id: string): void;
+
   // ---- Capture ----
   abstract screenshot(trigger?: ScreenshotTrigger, label?: string): Promise<ScreenshotEvent>;
   abstract domSnapshot(): Promise<DomSnapshotEvent>;

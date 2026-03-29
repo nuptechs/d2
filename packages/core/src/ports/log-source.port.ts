@@ -11,6 +11,9 @@ export abstract class LogSourcePort {
   abstract disconnect(): Promise<void>;
   abstract isConnected(): boolean;
 
+  // ---- Session ----
+  abstract setSessionId(id: string): void;
+
   // ---- Info ----
   abstract getSourceInfo(): LogSourceInfo;
 

@@ -39,7 +39,8 @@ export class SdkEventCollector {
       return;
     }
 
-    for (const handler of this.handlers) {
+    // Defensive copy — handlers may unsubscribe during iteration
+    for (const handler of [...this.handlers]) {
       handler(event);
     }
   }

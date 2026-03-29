@@ -11,6 +11,9 @@ export abstract class NetworkCapturePort {
   abstract stop(): Promise<void>;
   abstract isCapturing(): boolean;
 
+  // ---- Session ----
+  abstract setSessionId(id: string): void;
+
   // ---- Event subscription ----
   abstract onRequest(handler: (event: RequestEvent) => void): () => void;
   abstract onResponse(handler: (event: ResponseEvent) => void): () => void;

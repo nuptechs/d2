@@ -34,11 +34,15 @@ interface ServerGroupMessage {
 type ServerMessage = ServerEventMessage | ServerGroupMessage;
 
 const PING_INTERVAL_MS = 30_000;
+const MAX_MESSAGE_SIZE = 4096; // 4KB max for control messages
+const RATE_LIMIT_WINDOW_MS = 1000;
+const RATE_LIMIT_MAX = 20; // max 20 messages per second
 
 export function setupWebSocket(server: HttpServer, sessionManager: SessionManager): void {
-  const wss = new WebSocketServer({ server });
+  const wss = new WebSocketServer({ server, maxPayload: MAX_MESSAGE_SIZE });
   const subscriptions = new Map<WebSocket, Set<string>>();
   const alive = new Map<WebSocket, boolean>();
+  const messageCounts = new Map<WebSocket, { count: number; resetAt: number }>();
 
   // Event ingestion listener — push to subscribers
   sessionManager.onEventsIngested((sessionId: string, events: ProbeEvent[]) => {
@@ -79,6 +83,19 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
     });
 
     ws.on('message', (data: Buffer | string) => {
+      // Rate limiting
+      const now = Date.now();
+      let rate = messageCounts.get(ws);
+      if (!rate || now >= rate.resetAt) {
+        rate = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+        messageCounts.set(ws, rate);
+      }
+      rate.count++;
+      if (rate.count > RATE_LIMIT_MAX) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }));
+        return;
+      }
+
       let msg: ClientMessage;
       try {
         msg = JSON.parse(typeof data === 'string' ? data : data.toString('utf-8')) as ClientMessage;
@@ -92,8 +109,8 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
         return;
       }
 
-      // Validate sessionId format (basic check)
-      if (msg.sessionId.length > 128) {
+      // Validate sessionId format — alphanumeric + dashes only
+      if (msg.sessionId.length > 128 || !/^[\w-]+$/.test(msg.sessionId)) {
         ws.send(JSON.stringify({ type: 'error', message: 'Invalid sessionId' }));
         return;
       }
@@ -122,5 +139,6 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
   function cleanup(ws: WebSocket): void {
     subscriptions.delete(ws);
     alive.delete(ws);
+    messageCounts.delete(ws);
   }
 }

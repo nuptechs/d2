@@ -33,9 +33,39 @@ interface EventQuery {
 // Callback for event ingestion — used by WebSocket to push realtime events
 type EventIngestListener = (sessionId: string, events: ProbeEvent[]) => void;
 
+const SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours default
+const PURGE_INTERVAL_MS = 5 * 60 * 1000; // check every 5 minutes
+
 export class SessionManager {
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly ingestListeners: EventIngestListener[] = [];
+  private purgeTimer: ReturnType<typeof setInterval> | null = null;
+
+  constructor() {
+    this.purgeTimer = setInterval(() => this.purgeStale(), PURGE_INTERVAL_MS);
+    // Allow process to exit even if timer is running
+    if (this.purgeTimer.unref) this.purgeTimer.unref();
+  }
+
+  /** Remove sessions older than TTL that are completed or errored */
+  private purgeStale(): void {
+    const cutoff = nowMs() - SESSION_TTL_MS;
+    for (const [id, entry] of this.sessions) {
+      const status = entry.session.status;
+      const lastActivity = entry.session.endedAt ?? entry.session.startedAt;
+      if ((status === 'completed' || status === 'error') && lastActivity < cutoff) {
+        this.sessions.delete(id);
+      }
+    }
+  }
+
+  /** Stop the auto-purge timer (call on shutdown) */
+  destroy(): void {
+    if (this.purgeTimer) {
+      clearInterval(this.purgeTimer);
+      this.purgeTimer = null;
+    }
+  }
 
   createSession(name: string, config: SessionConfig, tags?: string[]): DebugSession {
     const id = generateSessionId();

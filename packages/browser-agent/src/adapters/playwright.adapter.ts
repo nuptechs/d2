@@ -28,6 +28,12 @@ export class PlaywrightBrowserAdapter extends BrowserAgentPort {
   private handlers = new Set<(event: BrowserEvent) => void>();
   private periodicInterval: ReturnType<typeof setInterval> | null = null;
 
+  // ---- Session ----
+
+  setSessionId(id: string): void {
+    this.sessionId = id;
+  }
+
   // ---- Lifecycle ----
 
   async launch(config: BrowserConfig): Promise<void> {

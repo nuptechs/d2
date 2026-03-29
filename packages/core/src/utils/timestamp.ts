@@ -7,10 +7,17 @@ export function nowMs(): number {
   return Date.now();
 }
 
-/** Current time in microseconds (epoch) — high resolution */
+/**
+ * Current time in microseconds (epoch) — high resolution.
+ * Anchors process.hrtime.bigint() to Date.now() at module load,
+ * so results are comparable with nowMs() and other epoch timestamps.
+ */
+const _epochMicrosAtStart = BigInt(Date.now()) * 1000n;
+const _hrtimeAtStart = process.hrtime.bigint();
+
 export function nowMicro(): number {
-  const [seconds, nanoseconds] = process.hrtime();
-  return seconds * 1_000_000 + Math.floor(nanoseconds / 1_000);
+  const elapsedNs = process.hrtime.bigint() - _hrtimeAtStart;
+  return Number(_epochMicrosAtStart + elapsedNs / 1000n);
 }
 
 /** Format a timestamp to ISO string */
