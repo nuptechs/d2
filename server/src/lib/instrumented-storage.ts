@@ -3,7 +3,7 @@
 // ============================================================
 
 import { StoragePort } from '@probe/core';
-import type { EventFilter, SessionListOptions, PoolStats } from '@probe/core';
+import type { EventFilter, SessionListOptions } from '@probe/core';
 import type { DebugSession, ProbeEvent } from '@probe/core';
 import {
   storageOperationDuration,

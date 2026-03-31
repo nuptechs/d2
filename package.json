@@ -14,7 +14,9 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "test:coverage": "vitest run --coverage",
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
