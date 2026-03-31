@@ -37,6 +37,10 @@ reportsRouter.get('/:id/report', asyncHandler(async (req: Request, res: Response
 
   const includeScreenshots = req.query['includeScreenshots'] !== 'false';
   const includeRequestBodies = req.query['includeRequestBodies'] === 'true';
+  const maxEventsPerGroup = Math.min(
+    Number(req.query['maxEventsPerGroup']) || 500,
+    1000,
+  );
 
   try {
     const timeline = await manager.getTimeline(sessionId);
@@ -52,7 +56,7 @@ reportsRouter.get('/:id/report', asyncHandler(async (req: Request, res: Response
 
     const content = await reporter.generate(
       { session, timeline, correlationGroups: groups },
-      { includeScreenshots, includeRequestBodies },
+      { includeScreenshots, includeRequestBodies, maxEventsPerGroup },
     );
 
     res.set('Content-Type', reporter.getMimeType());

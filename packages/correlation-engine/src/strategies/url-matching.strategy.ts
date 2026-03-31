@@ -72,9 +72,10 @@ export class UrlMatchingStrategy extends CorrelationStrategy {
   }
 
   private extractUrlFromMessage(message: string): string | undefined {
-    // Match common URL patterns in log messages
-    const urlPattern = /https?:\/\/[^\s"'<>]+/i;
-    const match = urlPattern.exec(message);
+    // Cap search space to first 2KB of message to avoid expensive regex scans
+    const searchable = message.length > 2048 ? message.slice(0, 2048) : message;
+    const urlPattern = /https?:\/\/[^\s"'<>]{1,2000}/i;
+    const match = urlPattern.exec(searchable);
     return match?.[0];
   }
 

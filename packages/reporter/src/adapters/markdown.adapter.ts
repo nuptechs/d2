@@ -94,7 +94,7 @@ export class MarkdownReporter extends ReporterPort {
     if (entries.length === 0) return '';
 
     const lines: string[] = [`## Timeline`, ''];
-    const maxEntries = options?.maxEventsPerGroup ?? entries.length;
+    const maxEntries = options?.maxEventsPerGroup ?? 500;
 
     for (let i = 0; i < Math.min(entries.length, maxEntries); i++) {
       const entry = entries[i]!;

@@ -41,6 +41,7 @@ const MAX_MESSAGE_SIZE = 4096; // 4KB max for control messages
 const RATE_LIMIT_WINDOW_MS = 1000;
 const RATE_LIMIT_MAX = 20; // max 20 messages per second
 const MAX_CONNECTIONS_PER_IP = 50;
+const MAX_SUBSCRIPTIONS_PER_CLIENT = 50;
 
 export function setupWebSocket(server: HttpServer, sessionManager: SessionManager, authConfig?: AuthConfig): WebSocketServer {
   const wss = new WebSocketServer({ server, maxPayload: MAX_MESSAGE_SIZE });
@@ -178,6 +179,10 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
 
       switch (msg.type) {
         case 'subscribe':
+          if (subs.size >= MAX_SUBSCRIPTIONS_PER_CLIENT) {
+            ws.send(JSON.stringify({ type: 'error', message: `Max ${MAX_SUBSCRIPTIONS_PER_CLIENT} subscriptions per client` }));
+            break;
+          }
           subs.add(msg.sessionId);
           ws.send(JSON.stringify({ type: 'subscribed', sessionId: msg.sessionId }));
           break;

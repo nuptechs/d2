@@ -27,6 +27,8 @@ export class PlaywrightBrowserAdapter extends BrowserAgentPort {
   private config: BrowserConfig | null = null;
   private handlers = new Set<(event: BrowserEvent) => void>();
   private periodicInterval: ReturnType<typeof setInterval> | null = null;
+  private consoleListener: ((msg: import('playwright').ConsoleMessage) => void) | null = null;
+  private errorListener: ((error: Error) => void) | null = null;
 
   // ---- Session ----
 
@@ -80,6 +82,9 @@ export class PlaywrightBrowserAdapter extends BrowserAgentPort {
       clearInterval(this.periodicInterval);
       this.periodicInterval = null;
     }
+    if (this.page) {
+      this.detachPageListeners(this.page);
+    }
     if (this.context) {
       await this.context.close().catch(() => {});
       this.context = null;
@@ -123,9 +128,14 @@ export class PlaywrightBrowserAdapter extends BrowserAgentPort {
     return event;
   }
 
+  private static readonly MAX_SNAPSHOT_SIZE = 2 * 1024 * 1024; // 2MB
+
   async domSnapshot(): Promise<DomSnapshotEvent> {
     const page = this.requirePage();
-    const html = await page.content();
+    let html = await page.content();
+    if (html.length > PlaywrightBrowserAdapter.MAX_SNAPSHOT_SIZE) {
+      html = html.slice(0, PlaywrightBrowserAdapter.MAX_SNAPSHOT_SIZE) + '\n<!-- [TRUNCATED] -->';
+    }
 
     const event: DomSnapshotEvent = {
       id: generateId(),
@@ -260,7 +270,6 @@ export class PlaywrightBrowserAdapter extends BrowserAgentPort {
     options?: { masked?: boolean },
   ): Promise<InputEvent> {
     const page = this.requirePage();
-    const masked = options?.masked ?? false;
 
     const handle = await page.$(selector);
     if (!handle) {
@@ -271,6 +280,11 @@ export class PlaywrightBrowserAdapter extends BrowserAgentPort {
     const inputType = await handle.evaluate((el) =>
       el.tagName === 'INPUT' ? el.getAttribute('type') ?? undefined : undefined,
     );
+
+    // Auto-mask sensitive input types (password, token, secret, hidden)
+    const SENSITIVE_TYPES = new Set(['password', 'token', 'secret', 'hidden']);
+    const autoMask = inputType ? SENSITIVE_TYPES.has(inputType.toLowerCase()) : false;
+    const masked = options?.masked ?? autoMask;
 
     await handle.fill(text);
 
@@ -339,6 +353,31 @@ export class PlaywrightBrowserAdapter extends BrowserAgentPort {
 
   async evaluate<T>(expression: string): Promise<T> {
     const page = this.requirePage();
+
+    // Defense-in-depth: block dangerous patterns
+    const BLOCKED_PATTERNS = [
+      /\bfetch\s*\(/i,
+      /\bXMLHttpRequest\b/i,
+      /\bimport\s*\(/i,
+      /\bdocument\.cookie\b/i,
+      /\blocalStorage\b/i,
+      /\bsessionStorage\b/i,
+      /\beval\s*\(/i,
+      /\bFunction\s*\(/i,
+    ];
+
+    for (const pattern of BLOCKED_PATTERNS) {
+      if (pattern.test(expression)) {
+        throw new Error(
+          `PlaywrightBrowserAdapter.evaluate: expression contains blocked pattern: ${pattern.source}`,
+        );
+      }
+    }
+
+    if (expression.length > 10_000) {
+      throw new Error('PlaywrightBrowserAdapter.evaluate: expression too long (max 10KB)');
+    }
+
     return page.evaluate(expression) as Promise<T>;
   }
 
@@ -372,7 +411,7 @@ export class PlaywrightBrowserAdapter extends BrowserAgentPort {
 
   private attachPageListeners(page: Page): void {
     if (this.config?.captureConsole) {
-      page.on('console', (msg) => {
+      this.consoleListener = (msg) => {
         const level = msg.type() as ConsoleEvent['level'];
         const validLevels = new Set(['log', 'warn', 'error', 'info', 'debug']);
         if (!validLevels.has(level)) return;
@@ -388,10 +427,11 @@ export class PlaywrightBrowserAdapter extends BrowserAgentPort {
           message: msg.text(),
         };
         this.emit(event);
-      });
+      };
+      page.on('console', this.consoleListener);
     }
 
-    page.on('pageerror', (error) => {
+    this.errorListener = (error) => {
       const event: BrowserErrorEvent = {
         id: generateId(),
         sessionId: this.sessionId,
@@ -404,6 +444,18 @@ export class PlaywrightBrowserAdapter extends BrowserAgentPort {
         stack: error.stack,
       };
       this.emit(event);
-    });
+    };
+    page.on('pageerror', this.errorListener);
+  }
+
+  private detachPageListeners(page: Page): void {
+    if (this.consoleListener) {
+      page.removeListener('console', this.consoleListener);
+      this.consoleListener = null;
+    }
+    if (this.errorListener) {
+      page.removeListener('pageerror', this.errorListener);
+      this.errorListener = null;
+    }
   }
 }

@@ -50,6 +50,7 @@ export class EventCorrelator extends CorrelatorPort {
 
   private static readonly MAX_EVENTS = 50_000;
   private static readonly MAX_GROUPS = 5_000;
+  private static readonly MAX_EVENTS_PER_GROUP = 10_000;
 
   private createdHandlers = new Set<(group: CorrelationGroup) => void>();
   private updatedHandlers = new Set<(group: CorrelationGroup) => void>();
@@ -201,6 +202,11 @@ export class EventCorrelator extends CorrelatorPort {
     const group = this.groups.get(groupId);
     if (!group) return;
 
+    // Cap per-group events to prevent a single group from consuming all memory
+    if (group.events.length >= EventCorrelator.MAX_EVENTS_PER_GROUP) {
+      group.events.shift();
+    }
+
     group.events.push(event);
     group.summary = buildGroupSummary(group.events);
 
@@ -234,7 +240,15 @@ export class EventCorrelator extends CorrelatorPort {
         if (e.timestamp > latest) latest = e.timestamp;
       }
       if (now - latest <= timeout) {
-        snapshot.set(id, toReadonly(group));
+        // Share events array reference — strategies only read, never mutate
+        snapshot.set(id, {
+          id: group.id,
+          sessionId: group.sessionId,
+          correlationId: group.correlationId,
+          createdAt: group.createdAt,
+          events: group.events,
+          summary: { ...group.summary },
+        });
       }
     }
 
