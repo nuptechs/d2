@@ -11,6 +11,10 @@
 
 ## Architecture
 
+> For detailed design decisions, data flow, and security model, see [ARCHITECTURE.md](ARCHITECTURE.md).
+> For the complete API specification, see [docs/API.md](docs/API.md).
+> For development setup and contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                          Debug Probe                            │
@@ -336,3 +340,13 @@ curl http://localhost:3001/api/todos
 ## License
 
 MIT
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [README.md](README.md) | Quick start, features, configuration |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System design, Port/Adapter pattern, data flow, security model |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, testing, code conventions, CI/CD |
+| [docs/API.md](docs/API.md) | Complete REST and WebSocket API reference |
+| [CHANGELOG.md](CHANGELOG.md) | Release history and notable changes |
