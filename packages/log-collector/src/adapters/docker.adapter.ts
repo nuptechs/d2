@@ -19,6 +19,7 @@ export class DockerLogAdapter extends LogSourcePort {
   private handlers: Array<(event: LogEvent) => void> = [];
   private stdoutParser: LogParser | null = null;
   private stderrParser: LogParser | null = null;
+  private static readonly MAX_LINE_BUFFER = 1_048_576; // 1MB
   private stdoutBuffer = '';
   private stderrBuffer = '';
 
@@ -32,6 +33,11 @@ export class DockerLogAdapter extends LogSourcePort {
 
     const containerId = config.source.containerId;
     if (!containerId) throw new Error('DockerLogAdapter requires config.source.containerId');
+
+    // Validate containerId format to prevent argument injection
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(containerId) || containerId.length > 128) {
+      throw new Error('Invalid container ID format');
+    }
 
     // Validate container exists
     await this.validateContainer(containerId);
@@ -111,6 +117,13 @@ export class DockerLogAdapter extends LogSourcePort {
     const parser = stream === 'stdout' ? this.stdoutParser! : this.stderrParser!;
 
     const combined = this[buffer] + data;
+    if (combined.length > DockerLogAdapter.MAX_LINE_BUFFER) {
+      // Force flush oversized line to prevent unbounded memory growth
+      const stripped = this.stripDockerPrefix(combined);
+      parser.feedLine(stripped);
+      this[buffer] = '';
+      return;
+    }
     const lines = combined.split('\n');
     this[buffer] = lines.pop() ?? '';
 

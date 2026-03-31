@@ -19,6 +19,7 @@ export class FileLogAdapter extends LogSourcePort {
   private reading = false;
   private handlers: Array<(event: LogEvent) => void> = [];
   private parser: LogParser | null = null;
+  private static readonly MAX_LINE_BUFFER = 1_048_576; // 1MB
   private lineBuffer = '';
 
   setSessionId(id: string): void {
@@ -119,6 +120,12 @@ export class FileLogAdapter extends LogSourcePort {
 
   private processData(data: string): void {
     const combined = this.lineBuffer + data;
+    if (combined.length > FileLogAdapter.MAX_LINE_BUFFER) {
+      // Force flush oversized line to prevent unbounded memory growth
+      this.parser!.feedLine(combined);
+      this.lineBuffer = '';
+      return;
+    }
     const lines = combined.split('\n');
 
     // Last element is either empty (line ended with \n) or a partial line

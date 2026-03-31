@@ -140,6 +140,8 @@ export class BatchSender {
           this.stats.sent += batch.length;
           return true;
         }
+        // Non-retryable failure (e.g. 4xx) — stop immediately
+        return false;
       } catch (error) {
         this.stats.errors++;
 
