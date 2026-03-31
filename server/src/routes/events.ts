@@ -6,6 +6,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { ProbeEvent, EventSource } from '@probe/core';
 import type { SessionManager } from '../services/session-manager.js';
+import { asyncHandler } from '../middleware/async-handler.js';
 
 export const eventsRouter = Router();
 
@@ -16,7 +17,7 @@ function getManager(req: Request): SessionManager {
 }
 
 // POST /api/sessions/:id/events — Ingest events (batch)
-eventsRouter.post('/:id/events', async (req: Request, res: Response) => {
+eventsRouter.post('/:id/events', asyncHandler(async (req: Request, res: Response) => {
   const manager = getManager(req);
   const sessionId = req.params['id'] as string;
 
@@ -53,10 +54,10 @@ eventsRouter.post('/:id/events', async (req: Request, res: Response) => {
 
   const ingested = await manager.ingestEvents(sessionId, events);
   res.status(201).json({ ingested });
-});
+}));
 
 // GET /api/sessions/:id/events — Query events with filters + pagination
-eventsRouter.get('/:id/events', async (req: Request, res: Response) => {
+eventsRouter.get('/:id/events', asyncHandler(async (req: Request, res: Response) => {
   const manager = getManager(req);
   const sessionId = req.params['id'] as string;
 
@@ -82,10 +83,10 @@ eventsRouter.get('/:id/events', async (req: Request, res: Response) => {
 
   const result = await manager.getEvents(sessionId, { source, type, fromTime, toTime, limit, offset });
   res.json({ events: result.events, total: result.total });
-});
+}));
 
 // GET /api/sessions/:id/timeline — Get correlated timeline
-eventsRouter.get('/:id/timeline', async (req: Request, res: Response) => {
+eventsRouter.get('/:id/timeline', asyncHandler(async (req: Request, res: Response) => {
   const manager = getManager(req);
   const sessionId = req.params['id'] as string;
 
@@ -96,10 +97,10 @@ eventsRouter.get('/:id/timeline', async (req: Request, res: Response) => {
   }
 
   res.json(timeline);
-});
+}));
 
 // GET /api/sessions/:id/groups — Get correlation groups
-eventsRouter.get('/:id/groups', async (req: Request, res: Response) => {
+eventsRouter.get('/:id/groups', asyncHandler(async (req: Request, res: Response) => {
   const manager = getManager(req);
   const sessionId = req.params['id'] as string;
 
@@ -110,4 +111,4 @@ eventsRouter.get('/:id/groups', async (req: Request, res: Response) => {
   }
 
   res.json({ groups, total: groups.length });
-});
+}));

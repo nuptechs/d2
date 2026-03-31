@@ -17,9 +17,11 @@ import type {
 import { generateSessionId, nowMs, DEFAULT_CORRELATION_CONFIG } from '@probe/core';
 import type { CorrelatorPort } from '@probe/core';
 import type { StoragePort, EventFilter } from '@probe/core';
+import type { SessionListOptions } from '@probe/core';
 
 interface InMemoryEntry {
   correlator: CorrelatorPort;
+  lastAccessed: number;
 }
 
 interface EventQuery {
@@ -36,6 +38,8 @@ type EventIngestListener = (sessionId: string, events: ProbeEvent[]) => void;
 
 const SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours default
 const PURGE_INTERVAL_MS = 5 * 60 * 1000; // check every 5 minutes
+const MAX_CORRELATOR_EVENTS = 50_000; // cap per-session correlator memory
+const MAX_CORRELATORS = 200; // max concurrent in-memory correlators
 
 export class SessionManager {
   private readonly correlators = new Map<string, InMemoryEntry>();
@@ -87,7 +91,8 @@ export class SessionManager {
       config.correlation ?? DEFAULT_CORRELATION_CONFIG;
 
     const correlator = this.createCorrelatorSync(correlationConfig);
-    this.correlators.set(id, { correlator });
+    this.correlators.set(id, { correlator, lastAccessed: Date.now() });
+    this.evictStaleCorrelators();
 
     await this.storage.saveSession(session);
     return session;
@@ -95,6 +100,10 @@ export class SessionManager {
 
   async listSessions(): Promise<DebugSession[]> {
     return this.storage.listSessions();
+  }
+
+  async listSessionsPaginated(opts: SessionListOptions): Promise<{ sessions: DebugSession[]; total: number }> {
+    return this.storage.listSessionsPaginated(opts);
   }
 
   async getSession(id: string): Promise<DebugSession | null> {
@@ -135,9 +144,11 @@ export class SessionManager {
       const config: CorrelationConfig =
         (existing.config as SessionConfig)?.correlation ?? DEFAULT_CORRELATION_CONFIG;
       const correlator = this.createCorrelatorSync(config);
-      entry = { correlator };
+      entry = { correlator, lastAccessed: Date.now() };
       this.correlators.set(sessionId, entry);
+      this.evictStaleCorrelators();
     }
+    entry.lastAccessed = Date.now();
     for (const event of events) {
       entry.correlator.ingest(event);
     }
@@ -182,9 +193,11 @@ export class SessionManager {
       for (const event of events) {
         correlator.ingest(event);
       }
-      this.correlators.set(sessionId, { correlator });
+      this.correlators.set(sessionId, { correlator, lastAccessed: Date.now() });
+      this.evictStaleCorrelators();
       return correlator.buildTimeline();
     }
+    entry.lastAccessed = Date.now();
     return entry.correlator.buildTimeline();
   }
 
@@ -201,10 +214,23 @@ export class SessionManager {
       for (const event of events) {
         correlator.ingest(event);
       }
-      this.correlators.set(sessionId, { correlator });
+      this.correlators.set(sessionId, { correlator, lastAccessed: Date.now() });
+      this.evictStaleCorrelators();
       return correlator.getGroups();
     }
+    entry.lastAccessed = Date.now();
     return entry.correlator.getGroups();
+  }
+
+  /** Evict least-recently-used correlators when over the cap */
+  private evictStaleCorrelators(): void {
+    if (this.correlators.size <= MAX_CORRELATORS) return;
+    const entries = [...this.correlators.entries()]
+      .sort((a, b) => a[1].lastAccessed - b[1].lastAccessed);
+    const toEvict = entries.slice(0, this.correlators.size - MAX_CORRELATORS);
+    for (const [id] of toEvict) {
+      this.correlators.delete(id);
+    }
   }
 
   onEventsIngested(listener: EventIngestListener): () => void {
@@ -232,6 +258,10 @@ export class SessionManager {
       },
       ingest(event: ProbeEvent) {
         events.push(event);
+        // Cap in-memory events to prevent unbounded growth
+        if (events.length > MAX_CORRELATOR_EVENTS) {
+          events.splice(0, events.length - MAX_CORRELATOR_EVENTS);
+        }
       },
       getGroups() {
         return groups;
