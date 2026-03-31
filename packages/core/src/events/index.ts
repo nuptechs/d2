@@ -1,1 +1,1 @@
-export { EventBus, type EventHandler } from './event-bus.js';
+export { EventBus, type EventHandler, type EventBusErrorHandler } from './event-bus.js';

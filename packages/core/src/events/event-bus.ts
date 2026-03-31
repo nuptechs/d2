@@ -7,10 +7,22 @@ import type { ProbeEvent } from '../types/index.js';
 
 export type EventHandler<T extends ProbeEvent = ProbeEvent> = (event: T) => void;
 
+export type EventBusErrorHandler = (context: string, err: unknown) => void;
+
+const defaultErrorHandler: EventBusErrorHandler = (context, err) => {
+  console.error(`[EventBus] ${context}`, err);
+};
+
 export class EventBus {
   private readonly handlers = new Map<string, Set<EventHandler>>();
   private readonly wildcardHandlers = new Set<EventHandler>();
   private _emitCount = 0;
+  private _onError: EventBusErrorHandler = defaultErrorHandler;
+
+  /** Set a custom error handler (e.g. pino logger) */
+  setErrorHandler(handler: EventBusErrorHandler): void {
+    this._onError = handler;
+  }
 
   /** Subscribe to events of a specific type (e.g., 'browser:click', 'network:request') */
   on<T extends ProbeEvent = ProbeEvent>(eventType: string, handler: EventHandler<T>): () => void {
@@ -48,7 +60,7 @@ export class EventBus {
         try {
           handler(event);
         } catch (err) {
-          console.error(`[EventBus] Handler error for "${eventType}":`, err);
+          this._onError(`Handler error for "${eventType}"`, err);
         }
       }
     }
@@ -62,7 +74,7 @@ export class EventBus {
           try {
             handler(event);
           } catch (err) {
-            console.error(`[EventBus] Handler error for "${sourceType}":`, err);
+            this._onError(`Handler error for "${sourceType}"`, err);
           }
         }
       }
@@ -72,7 +84,7 @@ export class EventBus {
       try {
         handler(event);
       } catch (err) {
-        console.error('[EventBus] Wildcard handler error:', err);
+        this._onError('Wildcard handler error', err);
       }
     }
   }

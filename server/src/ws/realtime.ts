@@ -2,10 +2,11 @@
 // WebSocket realtime — Event streaming to subscribed clients
 // ============================================================
 
-import type { Server as HttpServer } from 'node:http';
+import type { Server as HttpServer, IncomingMessage } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { ProbeEvent } from '@probe/core';
 import type { SessionManager } from '../services/session-manager.js';
+import { logger } from '../logger.js';
 
 interface SubscribeMessage {
   type: 'subscribe';
@@ -74,7 +75,18 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
     clearInterval(pingInterval);
   });
 
-  wss.on('connection', (ws: WebSocket) => {
+  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    // Origin validation — reject cross-origin WebSocket hijacking
+    const allowedOrigins = (process.env['CORS_ORIGINS'] ?? '').split(',').map(s => s.trim()).filter(Boolean);
+    if (allowedOrigins.length > 0) {
+      const origin = req.headers.origin ?? '';
+      if (!allowedOrigins.includes(origin)) {
+        logger.warn({ origin, ip: req.socket.remoteAddress }, 'WebSocket connection rejected: invalid origin');
+        ws.close(1008, 'Invalid origin');
+        return;
+      }
+    }
+
     subscriptions.set(ws, new Set());
     alive.set(ws, true);
 
@@ -92,6 +104,7 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
       }
       rate.count++;
       if (rate.count > RATE_LIMIT_MAX) {
+        logger.warn({ ip: req.socket.remoteAddress, count: rate.count }, 'WebSocket rate limit exceeded');
         ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }));
         return;
       }

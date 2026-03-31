@@ -35,10 +35,12 @@ export class PostgresStorageAdapter extends StoragePort {
     const { default: pg } = await import('pg');
 
     const poolConfig: PoolConfig = {
-      max: this.config.maxConnections ?? 10,
+      max: this.config.maxConnections ?? 20,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
-    };
+      statement_timeout: 30_000,    // Kill queries after 30s
+      query_timeout: 30_000,        // Client-side query timeout
+    } as PoolConfig;
 
     if (this.config.connectionString) {
       poolConfig.connectionString = this.config.connectionString;

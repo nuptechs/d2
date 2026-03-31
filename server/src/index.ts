@@ -6,8 +6,10 @@ import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import { sessionsRouter } from './routes/sessions.js';
 import { eventsRouter } from './routes/events.js';
 import { reportsRouter } from './routes/reports.js';
@@ -22,19 +24,32 @@ import { createStorage } from '@probe/core';
 import type { StorageConfig } from '@probe/core';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
-const PORT = parseInt(process.env['PORT'] ?? '7070', 10);
-const HOST = process.env['HOST'] ?? '0.0.0.0';
+
+// ---- Environment validation ----
+const envSchema = z.object({
+  PORT: z.coerce.number().int().min(1).max(65535).default(7070),
+  HOST: z.string().default('0.0.0.0'),
+  DATABASE_URL: z.string().optional(),
+  STORAGE_TYPE: z.enum(['memory', 'file', 'postgres']).default('memory'),
+  STORAGE_PATH: z.string().default('.probe-data'),
+  PROBE_JWT_SECRET: z.string().optional(),
+  PROBE_API_KEYS: z.string().default(''),
+  PROBE_AUTH_DISABLED: z.string().optional(),
+  CORS_ORIGINS: z.string().default(''),
+  LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+});
+
+const env = envSchema.parse(process.env);
 
 // ---- Storage initialization ----
 function buildStorageConfig(): StorageConfig {
-  const dbUrl = process.env['DATABASE_URL'];
-  if (dbUrl) {
-    return { type: 'postgres', connectionString: dbUrl };
+  if (env.DATABASE_URL) {
+    return { type: 'postgres', connectionString: env.DATABASE_URL };
   }
-  const storageType = (process.env['STORAGE_TYPE'] ?? 'memory') as StorageConfig['type'];
   return {
-    type: storageType,
-    basePath: process.env['STORAGE_PATH'] ?? '.probe-data',
+    type: env.STORAGE_TYPE as StorageConfig['type'],
+    basePath: env.STORAGE_PATH,
   };
 }
 
@@ -67,19 +82,24 @@ async function main(): Promise<void> {
     res.json({ status: 'ready' });
   });
 
+  // Security headers
+  app.use(helmet({
+    contentSecurityPolicy: env.NODE_ENV === 'production' ? undefined : false,
+  }));
+
   // Middleware — CORS restricted to configured origins
-  const corsOrigins = process.env['CORS_ORIGINS']?.split(',').map(s => s.trim()).filter(Boolean);
-  app.use(cors(corsOrigins?.length ? { origin: corsOrigins, credentials: true } : undefined));
-  app.use(express.json({ limit: '50mb' }));
+  const corsOrigins = env.CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean);
+  app.use(cors(corsOrigins.length ? { origin: corsOrigins, credentials: true } : undefined));
+  app.use(express.json({ type: 'application/json', limit: '50mb', strict: true }));
   app.use(requestLogger);
 
   // Rate limiter: 200 req/s sustained, 500 burst per IP
   app.use(createRateLimiter({ maxRequests: 200, windowMs: 1000, burstSize: 500 }));
 
   // Authentication (disable via PROBE_AUTH_DISABLED=1 for development)
-  const apiKeys = process.env['PROBE_API_KEYS']?.split(',').filter(Boolean) ?? [];
-  const jwtSecret = process.env['PROBE_JWT_SECRET'] ?? '';
-  const enableAuth = process.env['PROBE_AUTH_DISABLED'] !== '1' && (apiKeys.length > 0 || jwtSecret.length > 0);
+  const apiKeys = env.PROBE_API_KEYS.split(',').filter(Boolean);
+  const jwtSecret = env.PROBE_JWT_SECRET ?? '';
+  const enableAuth = env.PROBE_AUTH_DISABLED !== '1' && (apiKeys.length > 0 || jwtSecret.length > 0);
   app.use(createAuthMiddleware({ apiKeys, jwtSecret, enableAuth }));
 
   // Shared session manager — backed by StoragePort
@@ -111,26 +131,51 @@ async function main(): Promise<void> {
   const server = createServer(app);
   setupWebSocket(server, sessionManager);
 
-  server.listen(PORT, HOST, () => {
-    logger.info({ host: HOST, port: PORT, auth: enableAuth ? 'enabled' : 'disabled' }, `Listening on http://${HOST}:${PORT}`);
+  server.listen(env.PORT, env.HOST, () => {
+    logger.info({ host: env.HOST, port: env.PORT, auth: enableAuth ? 'enabled' : 'disabled' }, `Listening on http://${env.HOST}:${env.PORT}`);
   });
 
-  // Graceful shutdown
+  // Graceful shutdown — drain connections before exit
+  let isShuttingDown = false;
   const shutdown = (): void => {
-    logger.info('Shutting down...');
-    sessionManager.destroy();
-    storage.close().catch(() => {});
-    server.close(() => {
-      logger.info('Server closed');
-      process.exit(0);
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    logger.info('Shutting down gracefully...');
+
+    // Stop accepting new connections
+    server.close(async () => {
+      try {
+        sessionManager.destroy();
+        await storage.close();
+        logger.info('Shutdown complete');
+        process.exit(0);
+      } catch (err) {
+        logger.error({ err }, 'Error during shutdown');
+        process.exit(1);
+      }
     });
-    // Force exit after 5s
-    setTimeout(() => process.exit(1), 5000).unref();
+
+    // Force exit after 30s (enough time to drain)
+    setTimeout(() => {
+      logger.warn('Force exit — shutdown timeout exceeded');
+      process.exit(1);
+    }, 30_000).unref();
   };
 
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 }
+
+// ---- Process-level safety nets ----
+process.on('unhandledRejection', (reason) => {
+  logger.fatal({ reason }, 'Unhandled promise rejection — crashing');
+  process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+  logger.fatal({ err }, 'Uncaught exception — crashing');
+  process.exit(1);
+});
 
 main().catch((err) => {
   logger.fatal({ err }, 'Fatal startup error');

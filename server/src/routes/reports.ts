@@ -5,6 +5,8 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { SessionManager } from '../services/session-manager.js';
+import { asyncHandler } from '../middleware/async-handler.js';
+import { logger } from '../logger.js';
 
 export const reportsRouter = Router();
 
@@ -13,7 +15,7 @@ function getManager(req: Request): SessionManager {
 }
 
 // GET /api/sessions/:id/report — Generate report
-reportsRouter.get('/:id/report', async (req: Request, res: Response) => {
+reportsRouter.get('/:id/report', asyncHandler(async (req: Request, res: Response) => {
   const manager = getManager(req);
   const sessionId = req.params['id'] as string;
 
@@ -53,8 +55,10 @@ reportsRouter.get('/:id/report', async (req: Request, res: Response) => {
     res.set('Content-Type', reporter.getMimeType());
     res.send(content);
   } catch (error) {
-    res.status(500).json({
-      error: `Report generation failed: ${error instanceof Error ? error.message : String(error)}`,
-    });
+    logger.error({ err: error, sessionId, format }, 'Report generation failed');
+    const msg = process.env['NODE_ENV'] === 'production'
+      ? 'Report generation failed'
+      : error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: msg });
   }
-});
+}));

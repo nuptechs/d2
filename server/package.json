@@ -14,18 +14,23 @@
     "@probe/core": "*",
     "@probe/correlation-engine": "*",
     "@probe/reporter": "*",
+    "cors": "^2.8.5",
     "express": "^4.21.0",
+    "helmet": "^8.1.0",
     "pg": "^8.13.0",
     "pino": "^9.6.0",
     "ws": "^8.18.0",
-    "cors": "^2.8.5"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "@types/express": "^5.0.0",
-    "@types/pg": "^8.11.0",
-    "@types/ws": "^8.5.0",
     "@types/cors": "^2.8.0",
-    "pino-pretty": "^13.0.0"
+    "@types/express": "^5.0.0",
+    "@types/helmet": "^0.0.48",
+    "@types/pg": "^8.11.0",
+    "@types/supertest": "^7.2.0",
+    "@types/ws": "^8.5.0",
+    "pino-pretty": "^13.0.0",
+    "supertest": "^7.2.2",
+    "typescript": "^5.7.0"
   }
 }
