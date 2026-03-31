@@ -8,6 +8,7 @@ import {
   signJwt,
   verifyJwt,
   createAuthMiddleware,
+  timingSafeKeyCheck,
 } from '../../src/middleware/auth.js';
 import type { Request, Response } from 'express';
 
@@ -142,6 +143,118 @@ describe('Auth', () => {
       mw(req, res, next);
       expect(next).not.toHaveBeenCalled();
       expect(res._status).toBe(401);
+    });
+
+    it('authenticates API key via Bearer header (non-JWT format)', () => {
+      const apiKey = 'abcdef1234567890abcdef1234567890';
+      const mw = createAuthMiddleware({ apiKeys: [apiKey], jwtSecret: 's', enableAuth: true });
+      const req = mockReq({ authorization: `Bearer ${apiKey}` });
+      const res = mockRes();
+      const next = vi.fn();
+      mw(req, res, next);
+      expect(next).toHaveBeenCalled();
+      expect((req as any).auth.type).toBe('api-key');
+    });
+
+    it('rejects invalid JWT via Bearer with 401', () => {
+      const mw = createAuthMiddleware({ apiKeys: [], jwtSecret: 'secret', enableAuth: true });
+      const req = mockReq({ authorization: 'Bearer eyJ.eyJ.bad' });
+      const res = mockRes();
+      const next = vi.fn();
+      mw(req, res, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(res._status).toBe(401);
+      expect(res._json.message).toContain('Invalid or expired JWT');
+    });
+
+    it('bypasses /ready path', () => {
+      const mw = createAuthMiddleware({ apiKeys: ['key'], jwtSecret: 's', enableAuth: true });
+      const req = mockReq({}, '/ready');
+      const res = mockRes();
+      const next = vi.fn();
+      mw(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('does not leak error details for wrong-length API key', () => {
+      const mw = createAuthMiddleware({ apiKeys: ['correct-key'], jwtSecret: 's', enableAuth: true });
+      const req = mockReq({ 'x-api-key': 'short' });
+      const res = mockRes();
+      const next = vi.fn();
+      mw(req, res, next);
+      expect(res._status).toBe(401);
+      expect(res._json.message).not.toContain('correct-key');
+    });
+  });
+
+  describe('signJwt / verifyJwt — edge cases', () => {
+    const secret = 'edge-case-secret';
+
+    it('rejects token with wrong algorithm in header', () => {
+      // Manually forge a token with alg: "none"
+      const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
+      const payload = Buffer.from(JSON.stringify({ sub: 'evil', permissions: ['*'], iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url');
+      const fakeToken = `${header}.${payload}.`;
+      expect(verifyJwt(fakeToken, secret)).toBeNull();
+    });
+
+    it('rejects token with missing sub field', () => {
+      // Sign a valid token, then tamper the payload to remove sub
+      const token = signJwt({ sub: 'user', permissions: [] }, secret);
+      const parts = token.split('.');
+      const payloadObj = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString());
+      delete payloadObj.sub;
+      // Re-encode payload (signature will break → null anyway)
+      parts[1] = Buffer.from(JSON.stringify(payloadObj)).toString('base64url');
+      expect(verifyJwt(parts.join('.'), secret)).toBeNull();
+    });
+
+    it('rejects token with non-array permissions', () => {
+      const token = signJwt({ sub: 'user', permissions: [] }, secret);
+      const parts = token.split('.');
+      const payloadObj = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString());
+      payloadObj.permissions = 'admin';
+      parts[1] = Buffer.from(JSON.stringify(payloadObj)).toString('base64url');
+      expect(verifyJwt(parts.join('.'), secret)).toBeNull();
+    });
+
+    it('handles custom expiry', () => {
+      const token = signJwt({ sub: 'user', permissions: [] }, secret, 7200);
+      const payload = verifyJwt(token, secret);
+      expect(payload).not.toBeNull();
+      expect(payload!.exp - payload!.iat).toBe(7200);
+    });
+
+    it('rejects completely garbage base64 segments', () => {
+      expect(verifyJwt('!!!.@@@.###', secret)).toBeNull();
+    });
+
+    it('rejects token with empty segments', () => {
+      expect(verifyJwt('..', secret)).toBeNull();
+    });
+  });
+
+  // ── timingSafeKeyCheck ──────────────────────────────────────
+
+  describe('timingSafeKeyCheck', () => {
+    it('returns true for a matching key in the list', () => {
+      expect(timingSafeKeyCheck(['key-a', 'key-b', 'secret-123'], 'key-b')).toBe(true);
+    });
+
+    it('returns false for a non-matching key', () => {
+      expect(timingSafeKeyCheck(['key-a', 'key-b'], 'key-c')).toBe(false);
+    });
+
+    it('returns false for empty keys array', () => {
+      expect(timingSafeKeyCheck([], 'anything')).toBe(false);
+    });
+
+    it('returns false when candidate has different length', () => {
+      expect(timingSafeKeyCheck(['short'], 'much-longer-key-value')).toBe(false);
+    });
+
+    it('returns false for off-by-one character', () => {
+      expect(timingSafeKeyCheck(['abcdef'], 'abcdeg')).toBe(false);
     });
   });
 });

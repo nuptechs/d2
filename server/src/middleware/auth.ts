@@ -41,7 +41,7 @@ declare global {
 const HEALTH_PATHS = new Set(['/health', '/ready']);
 
 /** Timing-safe comparison for API keys — avoids side-channel leakage */
-function timingSafeKeyCheck(keys: string[], candidate: string): boolean {
+export function timingSafeKeyCheck(keys: string[], candidate: string): boolean {
   let match = false;
   for (const key of keys) {
     if (key.length === candidate.length) {

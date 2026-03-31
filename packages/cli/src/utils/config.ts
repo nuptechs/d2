@@ -18,7 +18,7 @@ export function loadConfig(configPath?: string): ProbeConfig {
       // Structural validation — reject non-object or __proto__ pollution attempts
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         console.warn(`Warning: Config in ${resolvedPath} must be a JSON object. Using defaults.`);
-      } else if ('__proto__' in parsed || 'constructor' in parsed || 'prototype' in parsed) {
+      } else if (Object.hasOwn(parsed, '__proto__') || Object.hasOwn(parsed, 'constructor') || Object.hasOwn(parsed, 'prototype')) {
         console.warn(`Warning: Config in ${resolvedPath} contains prohibited keys. Using defaults.`);
       } else {
         fileConfig = parsed as Partial<ProbeConfig>;

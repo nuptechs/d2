@@ -13,12 +13,18 @@ interface SessionEntry {
 
 export class MemoryStorageAdapter extends StoragePort {
   private static readonly MAX_EVENTS_PER_SESSION = 100_000;
+  private static readonly MAX_SESSIONS = 10_000;
   private store = new Map<string, SessionEntry>();
 
   // ---- Session CRUD ----
 
   async saveSession(session: DebugSession): Promise<void> {
     const existing = this.store.get(session.id);
+    // Enforce session cap — evict oldest if at limit
+    if (!existing && this.store.size >= MemoryStorageAdapter.MAX_SESSIONS) {
+      const oldest = this.store.keys().next().value;
+      if (oldest) this.store.delete(oldest);
+    }
     this.store.set(session.id, {
       session: structuredClone(session),
       events: existing?.events ?? [],

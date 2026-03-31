@@ -7,7 +7,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { ProbeEvent } from '@probe/core';
 import type { SessionManager } from '../services/session-manager.js';
 import type { AuthConfig } from '../middleware/auth.js';
-import { verifyJwt } from '../middleware/auth.js';
+import { verifyJwt, timingSafeKeyCheck } from '../middleware/auth.js';
 import { logger } from '../logger.js';
 
 interface SubscribeMessage {
@@ -89,13 +89,13 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
 
       let authenticated = false;
 
-      // Check x-api-key header (non-browser clients)
-      if (apiKeyHeader && authConfig.apiKeys.includes(apiKeyHeader)) {
+      // Check x-api-key header (non-browser clients) — timing-safe
+      if (apiKeyHeader && timingSafeKeyCheck(authConfig.apiKeys, apiKeyHeader)) {
         authenticated = true;
       }
       // Check token query param — could be API key or JWT
       if (!authenticated && tokenParam) {
-        if (authConfig.apiKeys.includes(tokenParam)) {
+        if (timingSafeKeyCheck(authConfig.apiKeys, tokenParam)) {
           authenticated = true;
         } else if (authConfig.jwtSecret) {
           const payload = verifyJwt(tokenParam, authConfig.jwtSecret);
