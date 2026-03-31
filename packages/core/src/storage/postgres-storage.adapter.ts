@@ -462,7 +462,9 @@ export class PostgresStorageAdapter extends StoragePort {
     }
     if (opts.search) {
       conditions.push(`name ILIKE $${paramIdx}`);
-      params.push(`%${opts.search}%`);
+      // Escape ILIKE wildcard characters in the user's search string
+      const escaped = opts.search.replace(/[%_\\]/g, '\\$&');
+      params.push(`%${escaped}%`);
       paramIdx++;
     }
 

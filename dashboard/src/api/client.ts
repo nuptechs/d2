@@ -1,7 +1,19 @@
 const BASE_URL = '/api';
 
 function getApiKey(): string {
-  return localStorage.getItem('probe-api-key') ?? '';
+  // Prefer sessionStorage (more secure, cleared on tab close)
+  const sessionKey = sessionStorage.getItem('probe-api-key');
+  if (sessionKey) return sessionKey;
+  // Fall back to apiKey stored in settings (for Settings page compat)
+  try {
+    const settings = JSON.parse(localStorage.getItem('probe-settings') ?? '{}');
+    if (settings.apiKey) {
+      // Migrate to sessionStorage for this tab session
+      sessionStorage.setItem('probe-api-key', settings.apiKey);
+      return settings.apiKey as string;
+    }
+  } catch { /* ignore parse errors */ }
+  return '';
 }
 
 interface RequestOptions extends RequestInit {

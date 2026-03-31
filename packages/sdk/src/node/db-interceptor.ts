@@ -152,6 +152,17 @@ function truncateQuery(query: string): string {
   return query.slice(0, MAX_QUERY_LENGTH) + '... [truncated]';
 }
 
+/** Best-effort heuristic to reject common ReDoS-prone regex shapes */
+function isSafeRegex(pattern: string): boolean {
+  // Reject nested quantifiers: (x+)+, (x*)+, (x+)*, (x*){2,}, etc.
+  if (/([+*])\)[+*{]/.test(pattern)) return false;
+  if (/\([^)]*[+*][^)]*\)[+*{]/.test(pattern)) return false;
+  // Reject excessive alternation depth (>20 branches)
+  const pipes = (pattern.match(/\|/g) ?? []).length;
+  if (pipes > 20) return false;
+  return true;
+}
+
 function redactParams(
   params: unknown[] | undefined,
   redactPatterns?: string[],
@@ -174,6 +185,7 @@ function redactParams(
     // Also check custom patterns provided by config
     for (const customPattern of redactPatterns) {
       if (customPattern.length > 500) continue; // skip overly long patterns
+      if (!isSafeRegex(customPattern)) continue; // skip ReDoS-prone patterns
       try {
         const re = new RegExp(customPattern, 'gi');
         result = result.replace(re, '[REDACTED]');

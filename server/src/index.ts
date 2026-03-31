@@ -61,9 +61,8 @@ async function main(): Promise<void> {
 
   const app = express();
 
-  // Health check (before auth/rate-limit)
+  // Health check (before auth/rate-limit) — minimal info for load balancers
   app.get('/health', async (_req, res) => {
-    const mem = process.memoryUsage();
     let storageOk = true;
     try {
       // Fast probe — if storage is down, this will throw/timeout
@@ -74,17 +73,9 @@ async function main(): Promise<void> {
     const status = storageOk ? 'ok' : 'degraded';
     res.status(storageOk ? 200 : 503).json({
       status,
-      uptime: process.uptime() * 1000,
       version: '0.1.0',
       timestamp: new Date().toISOString(),
-      storage: storageConfig.type,
       storageOk,
-      memory: {
-        rss: mem.rss,
-        heapUsed: mem.heapUsed,
-        heapTotal: mem.heapTotal,
-        external: mem.external,
-      },
     });
   });
   app.get('/ready', async (_req, res) => {
@@ -174,7 +165,7 @@ async function main(): Promise<void> {
 
   // Create HTTP server & attach WebSocket
   const server = createServer(app);
-  const wss = setupWebSocket(server, sessionManager);
+  const wss = setupWebSocket(server, sessionManager, { apiKeys, jwtSecret, enableAuth });
 
   server.listen(env.PORT, env.HOST, () => {
     logger.info({ host: env.HOST, port: env.PORT, auth: enableAuth ? 'enabled' : 'disabled' }, `Listening on http://${env.HOST}:${env.PORT}`);

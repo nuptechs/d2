@@ -32,6 +32,10 @@ export class FileStorageAdapter extends StoragePort {
   // ---- Helpers ----
 
   private sessionDir(id: string): string {
+    // Defense-in-depth: reject session IDs with path separators or traversal
+    if (!id || /[/\\]/.test(id) || id.includes('..')) {
+      throw new Error(`Invalid session ID: ${id}`);
+    }
     return join(this.basePath, 'sessions', id);
   }
 

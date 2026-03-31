@@ -10,7 +10,6 @@ import { getCurrentRequestId, getCurrentCorrelationId } from './context.js';
 export interface RedisInterceptorConfig {
   emitEvent: (event: Omit<SdkCacheEvent, 'id' | 'sessionId' | 'timestamp' | 'source'>) => void;
   sessionId: string;
-  redactValues?: boolean; // default true
 }
 
 const INTERCEPTED_COMMANDS = [

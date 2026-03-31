@@ -45,10 +45,21 @@ export function wrapMongoClient(client: any, config: MongoInterceptorConfig): an
   const db = client.db?.();
   if (!db) return client;
 
-  const tempCollection = db.collection?.('__probe_temp__');
-  if (!tempCollection) return client;
+  // Get Collection prototype without creating a named collection reference
+  // db.collection() in MongoDB drivers may register the name internally
+  const collectionFn = db.collection;
+  if (typeof collectionFn !== 'function') return client;
 
-  const collectionProto = Object.getPrototypeOf(tempCollection);
+  // Access Collection.prototype via the constructor on the db's prototype chain
+  let collectionProto: any;
+  try {
+    // Attempt to get the prototype from an existing built-in collection
+    // 'admin' always exists and won't pollute the user's namespace
+    const sample = collectionFn.call(db, 'admin');
+    collectionProto = sample ? Object.getPrototypeOf(sample) : null;
+  } catch {
+    return client; // can't get prototype — bail silently
+  }
   if (!collectionProto || originals.has(client)) return client;
 
   const redact = config.redactParams !== false; // default true

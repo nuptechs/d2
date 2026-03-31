@@ -14,7 +14,15 @@ export function loadConfig(configPath?: string): ProbeConfig {
   if (existsSync(resolvedPath)) {
     try {
       const raw = readFileSync(resolvedPath, 'utf-8');
-      fileConfig = JSON.parse(raw) as Partial<ProbeConfig>;
+      const parsed = JSON.parse(raw);
+      // Structural validation — reject non-object or __proto__ pollution attempts
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        console.warn(`Warning: Config in ${resolvedPath} must be a JSON object. Using defaults.`);
+      } else if ('__proto__' in parsed || 'constructor' in parsed || 'prototype' in parsed) {
+        console.warn(`Warning: Config in ${resolvedPath} contains prohibited keys. Using defaults.`);
+      } else {
+        fileConfig = parsed as Partial<ProbeConfig>;
+      }
     } catch (err) {
       console.warn(`Warning: Failed to parse ${resolvedPath}: ${(err as Error).message}`);
       console.warn('Using default configuration.');
@@ -49,10 +57,15 @@ export function loadConfig(configPath?: string): ProbeConfig {
 
   const envPort = process.env['PROBE_PROXY_PORT'];
   if (envPort) {
-    merged.session.network = {
-      ...(merged.session.network ?? { enabled: true, mode: 'proxy' as const, captureBody: true }),
-      proxyPort: parseInt(envPort, 10),
-    };
+    const parsed = parseInt(envPort, 10);
+    if (Number.isNaN(parsed) || parsed < 1 || parsed > 65535) {
+      console.warn(`Warning: Invalid PROBE_PROXY_PORT "${envPort}" — using default.`);
+    } else {
+      merged.session.network = {
+        ...(merged.session.network ?? { enabled: true, mode: 'proxy' as const, captureBody: true }),
+        proxyPort: parsed,
+      };
+    }
   }
 
   const envOutput = process.env['PROBE_OUTPUT_DIR'];

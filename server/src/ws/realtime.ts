@@ -6,6 +6,8 @@ import type { Server as HttpServer, IncomingMessage } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { ProbeEvent } from '@probe/core';
 import type { SessionManager } from '../services/session-manager.js';
+import type { AuthConfig } from '../middleware/auth.js';
+import { verifyJwt } from '../middleware/auth.js';
 import { logger } from '../logger.js';
 
 interface SubscribeMessage {
@@ -40,7 +42,7 @@ const RATE_LIMIT_WINDOW_MS = 1000;
 const RATE_LIMIT_MAX = 20; // max 20 messages per second
 const MAX_CONNECTIONS_PER_IP = 50;
 
-export function setupWebSocket(server: HttpServer, sessionManager: SessionManager): WebSocketServer {
+export function setupWebSocket(server: HttpServer, sessionManager: SessionManager, authConfig?: AuthConfig): WebSocketServer {
   const wss = new WebSocketServer({ server, maxPayload: MAX_MESSAGE_SIZE });
   const subscriptions = new Map<WebSocket, Set<string>>();
   const alive = new Map<WebSocket, boolean>();
@@ -79,6 +81,35 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
   });
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    // ── Auth check — WS cannot set headers from browsers, so accept query param ──
+    if (authConfig?.enableAuth) {
+      const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+      const tokenParam = url.searchParams.get('token') ?? '';
+      const apiKeyHeader = (req.headers['x-api-key'] as string) ?? '';
+
+      let authenticated = false;
+
+      // Check x-api-key header (non-browser clients)
+      if (apiKeyHeader && authConfig.apiKeys.includes(apiKeyHeader)) {
+        authenticated = true;
+      }
+      // Check token query param — could be API key or JWT
+      if (!authenticated && tokenParam) {
+        if (authConfig.apiKeys.includes(tokenParam)) {
+          authenticated = true;
+        } else if (authConfig.jwtSecret) {
+          const payload = verifyJwt(tokenParam, authConfig.jwtSecret);
+          if (payload) authenticated = true;
+        }
+      }
+
+      if (!authenticated) {
+        logger.warn({ ip: req.socket.remoteAddress }, 'WebSocket connection rejected: unauthorized');
+        ws.close(1008, 'Unauthorized');
+        return;
+      }
+    }
+
     // Per-IP connection limit
     const ip = req.socket.remoteAddress ?? 'unknown';
     const currentCount = connectionsPerIp.get(ip) ?? 0;

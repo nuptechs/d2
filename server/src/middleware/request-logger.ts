@@ -23,7 +23,14 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
     return;
   }
 
-  const requestId = (req.headers['x-request-id'] as string) ?? randomUUID();
+  const rawRequestId = req.headers['x-request-id'] as string | undefined;
+  const requestId = (
+    rawRequestId
+    && rawRequestId.length <= 128
+    && /^[\w\-.:]+$/.test(rawRequestId)
+  )
+    ? rawRequestId
+    : randomUUID();
   req.requestId = requestId;
   req.startTime = Date.now();
   res.setHeader('x-request-id', requestId);
