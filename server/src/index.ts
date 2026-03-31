@@ -62,14 +62,23 @@ async function main(): Promise<void> {
   const app = express();
 
   // Health check (before auth/rate-limit)
-  app.get('/health', (_req, res) => {
+  app.get('/health', async (_req, res) => {
     const mem = process.memoryUsage();
-    res.json({
-      status: 'ok',
+    let storageOk = true;
+    try {
+      // Fast probe — if storage is down, this will throw/timeout
+      await storage.listSessions();
+    } catch {
+      storageOk = false;
+    }
+    const status = storageOk ? 'ok' : 'degraded';
+    res.status(storageOk ? 200 : 503).json({
+      status,
       uptime: process.uptime() * 1000,
       version: '0.1.0',
       timestamp: new Date().toISOString(),
       storage: storageConfig.type,
+      storageOk,
       memory: {
         rss: mem.rss,
         heapUsed: mem.heapUsed,
@@ -78,8 +87,13 @@ async function main(): Promise<void> {
       },
     });
   });
-  app.get('/ready', (_req, res) => {
-    res.json({ status: 'ready' });
+  app.get('/ready', async (_req, res) => {
+    try {
+      await storage.listSessions();
+      res.json({ status: 'ready' });
+    } catch {
+      res.status(503).json({ status: 'not ready', reason: 'storage unavailable' });
+    }
   });
 
   // Security headers
@@ -106,8 +120,16 @@ async function main(): Promise<void> {
   app.use(express.json({ type: 'application/json', limit: '10mb', strict: true }));
   app.use(requestLogger);
 
-  // Rate limiter: 200 req/s sustained, 500 burst per IP
-  app.use(createRateLimiter({ maxRequests: 200, windowMs: 1000, burstSize: 500 }));
+  // Rate limiters: generous for reads, stricter for writes
+  const readRateLimiter = createRateLimiter({ maxRequests: 200, windowMs: 1000, burstSize: 500 });
+  const writeRateLimiter = createRateLimiter({ maxRequests: 50, windowMs: 1000, burstSize: 100 });
+  app.use((req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+      readRateLimiter(req, res, next);
+    } else {
+      writeRateLimiter(req, res, next);
+    }
+  });
 
   // Authentication (disable via PROBE_AUTH_DISABLED=1 for development)
   const apiKeys = env.PROBE_API_KEYS.split(',').filter(Boolean);

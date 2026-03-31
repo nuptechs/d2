@@ -1,14 +1,11 @@
-hardening: circuit breaker, retry, write locks, zod validation, CSP, audit logging
+hardening round 2: health checks, memory caps, WS limits, rate split, tests
 
-- Postgres: inlined StorageCircuitBreaker (closed/open/half-open state machine)
-- Postgres: withRetry() with exponential backoff on all 12+ query methods
-- Postgres: transient error classification (9 error patterns including deadlocks)
-- Postgres: migration v2 with composite indexes for filtered queries + name search
-- File storage: per-session async write lock preventing JSONL corruption
-- Type safety: added optional type field to ProbeEvent, eliminated 8 as-unknown casts
-- Input validation: zod schemas on all session + event routes (name, batch size, limits)
-- Security: proper CSP headers (default-src self, frame-ancestors none, etc.)
-- Security: JSON body limit reduced from 50MB to 10MB
-- Security: per-event size limit 256KB on event ingestion
-- Audit logging: session create/delete/status-change with IP + sessionId
-- Tests: 157/157 passing, 10/10 files
+- /health and /ready now probe storage, return 503 on failure
+- EventCorrelator: cap at 50K events + 5K groups (oldest-evict)
+- WebSocket: max 50 connections per IP with cleanup on disconnect
+- Rate limiter split: read 200req/s vs write 50req/s
+- Export StorageCircuitBreaker + isTransientError for testing
+- NEW: circuit-breaker.test.ts (18 tests: CB states, transient errors)
+- NEW: security-headers.test.ts (5 tests: CSP, HSTS, X-Frame, etc.)
+- NEW: reports.test.ts (6 tests: HTML/JSON/Markdown generation, 404, 400)
+- 188/188 tests passing, 10/10 builds

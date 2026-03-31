@@ -4,7 +4,7 @@
 
 export { FileStorageAdapter } from './file-storage.adapter.js';
 export { MemoryStorageAdapter } from './memory-storage.adapter.js';
-export { PostgresStorageAdapter, type PostgresStorageConfig } from './postgres-storage.adapter.js';
+export { PostgresStorageAdapter, StorageCircuitBreaker, isTransientError, type PostgresStorageConfig } from './postgres-storage.adapter.js';
 export { StoragePort, type EventFilter } from '../ports/storage.port.js';
 
 import type { StorageConfig } from '../types/config.js';

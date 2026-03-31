@@ -38,12 +38,15 @@ const PING_INTERVAL_MS = 30_000;
 const MAX_MESSAGE_SIZE = 4096; // 4KB max for control messages
 const RATE_LIMIT_WINDOW_MS = 1000;
 const RATE_LIMIT_MAX = 20; // max 20 messages per second
+const MAX_CONNECTIONS_PER_IP = 50;
 
 export function setupWebSocket(server: HttpServer, sessionManager: SessionManager): void {
   const wss = new WebSocketServer({ server, maxPayload: MAX_MESSAGE_SIZE });
   const subscriptions = new Map<WebSocket, Set<string>>();
   const alive = new Map<WebSocket, boolean>();
   const messageCounts = new Map<WebSocket, { count: number; resetAt: number }>();
+  const connectionsPerIp = new Map<string, number>();
+  const wsToIp = new Map<WebSocket, string>();
 
   // Event ingestion listener — push to subscribers
   sessionManager.onEventsIngested((sessionId: string, events: ProbeEvent[]) => {
@@ -76,6 +79,17 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
   });
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    // Per-IP connection limit
+    const ip = req.socket.remoteAddress ?? 'unknown';
+    const currentCount = connectionsPerIp.get(ip) ?? 0;
+    if (currentCount >= MAX_CONNECTIONS_PER_IP) {
+      logger.warn({ ip, connections: currentCount }, 'WebSocket connection limit exceeded');
+      ws.close(1008, 'Too many connections');
+      return;
+    }
+    connectionsPerIp.set(ip, currentCount + 1);
+    wsToIp.set(ws, ip);
+
     // Origin validation — reject cross-origin WebSocket hijacking
     const allowedOrigins = (process.env['CORS_ORIGINS'] ?? '').split(',').map(s => s.trim()).filter(Boolean);
     if (allowedOrigins.length > 0) {
@@ -150,6 +164,13 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
   });
 
   function cleanup(ws: WebSocket): void {
+    const wsIp = wsToIp.get(ws);
+    if (wsIp) {
+      const count = (connectionsPerIp.get(wsIp) ?? 1) - 1;
+      if (count <= 0) connectionsPerIp.delete(wsIp);
+      else connectionsPerIp.set(wsIp, count);
+      wsToIp.delete(ws);
+    }
     subscriptions.delete(ws);
     alive.delete(ws);
     messageCounts.delete(ws);

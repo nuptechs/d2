@@ -48,6 +48,9 @@ export class EventCorrelator extends CorrelatorPort {
   private allEvents: ProbeEvent[] = [];
   private currentSessionId = '';
 
+  private static readonly MAX_EVENTS = 50_000;
+  private static readonly MAX_GROUPS = 5_000;
+
   private createdHandlers = new Set<(group: CorrelationGroup) => void>();
   private updatedHandlers = new Set<(group: CorrelationGroup) => void>();
 
@@ -74,6 +77,10 @@ export class EventCorrelator extends CorrelatorPort {
     }
 
     this.allEvents.push(event);
+    // Cap in-memory events to prevent unbounded growth
+    if (this.allEvents.length > EventCorrelator.MAX_EVENTS) {
+      this.allEvents.splice(0, this.allEvents.length - EventCorrelator.MAX_EVENTS);
+    }
     if (!this.currentSessionId) {
       this.currentSessionId = event.sessionId;
     }
@@ -170,6 +177,20 @@ export class EventCorrelator extends CorrelatorPort {
     };
 
     this.groups.set(id, group);
+
+    // Evict oldest groups if cap exceeded
+    if (this.groups.size > EventCorrelator.MAX_GROUPS) {
+      let oldestId: string | null = null;
+      let oldestTime = Infinity;
+      for (const [gid, g] of this.groups) {
+        if (g.createdAt < oldestTime) {
+          oldestTime = g.createdAt;
+          oldestId = gid;
+        }
+      }
+      if (oldestId) this.groups.delete(oldestId);
+    }
+
     const frozen = toReadonly(group);
     for (const handler of this.createdHandlers) {
       try { handler(frozen); } catch { /* swallow handler errors */ }

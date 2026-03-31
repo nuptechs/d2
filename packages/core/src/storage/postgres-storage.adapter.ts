@@ -18,7 +18,8 @@ interface CBConfig {
   halfOpenMaxAttempts: number;
 }
 
-class StorageCircuitBreaker {
+/** @internal — exported for unit testing only */
+export class StorageCircuitBreaker {
   private state: 'closed' | 'open' | 'half-open' = 'closed';
   private failures = 0;
   private lastFailureTime = 0;
@@ -84,7 +85,8 @@ class StorageCircuitBreaker {
 
 // ---- Transient error detection ----
 
-function isTransientError(error: unknown): boolean {
+/** @internal — exported for unit testing only */
+export function isTransientError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const err = error as Error & { code?: string };
   return (
