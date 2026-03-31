@@ -184,13 +184,13 @@ export class MarkdownReporter extends ReporterPort {
         const be = error as unknown as BrowserErrorEvent;
         lines.push(``, `**${be.errorType}**: ${be.message}`);
         if (be.stack) {
-          lines.push('```', be.stack, '```');
+          lines.push('```', be.stack.replace(/`{3,}/g, (m) => '\\`'.repeat(m.length)), '```');
         }
       } else if (isLogEvent(error)) {
         const log = error as LogEvent;
         lines.push(``, `**[${log.level.toUpperCase()}]** ${log.message}`);
         if (log.stackTrace) {
-          lines.push('```', log.stackTrace, '```');
+          lines.push('```', log.stackTrace.replace(/`{3,}/g, (m) => '\\`'.repeat(m.length)), '```');
         }
       } else if (isResponseEvent(error)) {
         const res = error as ResponseEvent;

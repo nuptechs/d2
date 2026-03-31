@@ -19,6 +19,9 @@ export class EventBus {
   private _emitCount = 0;
   private _onError: EventBusErrorHandler = defaultErrorHandler;
 
+  private static readonly MAX_HANDLERS_PER_EVENT = 100;
+  private static readonly MAX_WILDCARD_HANDLERS = 50;
+
   /** Set a custom error handler (e.g. pino logger) */
   setErrorHandler(handler: EventBusErrorHandler): void {
     this._onError = handler;
@@ -30,6 +33,10 @@ export class EventBus {
     if (!set) {
       set = new Set();
       this.handlers.set(eventType, set);
+    }
+    if (set.size >= EventBus.MAX_HANDLERS_PER_EVENT) {
+      this._onError(`Handler limit reached for "${eventType}" (max ${EventBus.MAX_HANDLERS_PER_EVENT})`, new Error('Handler limit exceeded'));
+      return () => {};
     }
     set.add(handler as EventHandler);
     return () => this.off(eventType, handler as EventHandler);
@@ -46,6 +53,10 @@ export class EventBus {
 
   /** Subscribe to ALL events regardless of type */
   onAny(handler: EventHandler): () => void {
+    if (this.wildcardHandlers.size >= EventBus.MAX_WILDCARD_HANDLERS) {
+      this._onError(`Wildcard handler limit reached (max ${EventBus.MAX_WILDCARD_HANDLERS})`, new Error('Handler limit exceeded'));
+      return () => {};
+    }
     this.wildcardHandlers.add(handler);
     return () => this.wildcardHandlers.delete(handler);
   }

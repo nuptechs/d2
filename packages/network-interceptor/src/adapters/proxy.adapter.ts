@@ -97,6 +97,13 @@ export class ProxyAdapter extends NetworkCapturePort {
       const [hostname, portStr] = (req.url ?? '').split(':');
       const targetPort = parseInt(portStr ?? '443', 10);
 
+      // SSRF protection — block CONNECT tunnels to private/internal hosts
+      if (isPrivateHost(hostname ?? '')) {
+        clientSocket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        clientSocket.destroy();
+        return;
+      }
+
       const TUNNEL_TIMEOUT_MS = 120_000;
 
       const serverSocket = net.connect(targetPort, hostname ?? '', () => {

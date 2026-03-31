@@ -4,6 +4,7 @@
 // ============================================================
 
 import type { SdkEvent } from '@probe/core';
+import { redactBody } from '@probe/core';
 import { getCurrentRequestId, getCurrentCorrelationId } from './context.js';
 import { SdkEventCollector } from './event-collector.js';
 
@@ -66,15 +67,23 @@ function emitLogEvent(
   level: LogLevel,
   args: unknown[],
 ): void {
-  const message = args
+  const rawMessage = args
     .map((arg) => {
-      if (typeof arg === 'string') return arg;
+      if (typeof arg === 'string') return arg.length > MAX_MESSAGE_LENGTH ? arg.slice(0, MAX_MESSAGE_LENGTH) : arg;
       if (arg instanceof Error) return arg.message;
-      try { return JSON.stringify(arg); }
+      try {
+        const json = JSON.stringify(arg);
+        return json.length > MAX_MESSAGE_LENGTH ? json.slice(0, MAX_MESSAGE_LENGTH) + '...' : json;
+      }
       catch { return String(arg); }
     })
-    .join(' ')
-    .slice(0, MAX_MESSAGE_LENGTH);
+    .join(' ');
+
+  const message = redactBody(
+    rawMessage.length > MAX_MESSAGE_LENGTH
+      ? rawMessage.slice(0, MAX_MESSAGE_LENGTH) + '... [truncated]'
+      : rawMessage
+  );
 
   const stack = level === 'error'
     ? args.find((a): a is Error => a instanceof Error)?.stack

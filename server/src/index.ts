@@ -128,10 +128,25 @@ async function main(): Promise<void> {
   });
 
   // Authentication (disable via PROBE_AUTH_DISABLED=1 for dev/test ONLY)
+  const MIN_API_KEY_LENGTH = 16;
+  const MIN_JWT_SECRET_LENGTH = 32;
   const apiKeys = env.PROBE_API_KEYS.split(',').filter(Boolean);
   const jwtSecret = env.PROBE_JWT_SECRET ?? '';
   if (env.PROBE_AUTH_DISABLED === '1' && env.NODE_ENV === 'production') {
     logger.fatal('PROBE_AUTH_DISABLED=1 is forbidden in production — aborting');
+    process.exit(1);
+  }
+  if (env.NODE_ENV === 'production' && apiKeys.length === 0 && !jwtSecret) {
+    logger.fatal('Production requires PROBE_API_KEYS or PROBE_JWT_SECRET — aborting');
+    process.exit(1);
+  }
+  const weakKeys = apiKeys.filter(k => k.length < MIN_API_KEY_LENGTH);
+  if (weakKeys.length > 0) {
+    logger.fatal({ count: weakKeys.length }, `API keys must be at least ${MIN_API_KEY_LENGTH} characters — aborting`);
+    process.exit(1);
+  }
+  if (jwtSecret && jwtSecret.length < MIN_JWT_SECRET_LENGTH) {
+    logger.fatal(`PROBE_JWT_SECRET must be at least ${MIN_JWT_SECRET_LENGTH} characters — aborting`);
     process.exit(1);
   }
   const authDisabledByEnv = env.PROBE_AUTH_DISABLED === '1' && env.NODE_ENV !== 'production';

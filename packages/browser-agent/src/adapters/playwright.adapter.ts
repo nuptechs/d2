@@ -129,6 +129,7 @@ export class PlaywrightBrowserAdapter extends BrowserAgentPort {
   }
 
   private static readonly MAX_SNAPSHOT_SIZE = 2 * 1024 * 1024; // 2MB
+  private static readonly MAX_CONSOLE_MESSAGE = 8_192;
 
   async domSnapshot(): Promise<DomSnapshotEvent> {
     const page = this.requirePage();
@@ -364,6 +365,16 @@ export class PlaywrightBrowserAdapter extends BrowserAgentPort {
       /\bsessionStorage\b/i,
       /\beval\s*\(/i,
       /\bFunction\s*\(/i,
+      /\bnavigator\s*\.\s*sendBeacon\b/i,
+      /\bWebSocket\b/i,
+      /\bWorker\s*\(/i,
+      /\bSharedWorker\s*\(/i,
+      /\bwindow\s*\.\s*open\b/i,
+      /\bindexedDB\b/i,
+      // Bracket notation bypasses
+      /\[\s*['"`](?:fetch|XMLHttpRequest|localStorage|sessionStorage|cookie)['"`]\s*\]/i,
+      // Comma-operator bypass: (0,fetch)(url)
+      /,\s*fetch\s*\)\s*\(/i,
     ];
 
     for (const pattern of BLOCKED_PATTERNS) {
@@ -416,6 +427,7 @@ export class PlaywrightBrowserAdapter extends BrowserAgentPort {
         const validLevels = new Set(['log', 'warn', 'error', 'info', 'debug']);
         if (!validLevels.has(level)) return;
 
+        const rawText = msg.text();
         const event: ConsoleEvent = {
           id: generateId(),
           sessionId: this.sessionId,
@@ -424,7 +436,9 @@ export class PlaywrightBrowserAdapter extends BrowserAgentPort {
           type: 'console',
           pageUrl: page.url(),
           level,
-          message: msg.text(),
+          message: rawText.length > PlaywrightBrowserAdapter.MAX_CONSOLE_MESSAGE
+            ? rawText.slice(0, PlaywrightBrowserAdapter.MAX_CONSOLE_MESSAGE) + '... [truncated]'
+            : rawText,
         };
         this.emit(event);
       };

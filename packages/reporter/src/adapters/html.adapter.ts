@@ -223,7 +223,7 @@ tr:hover td { background: var(--bg-hover); }
   </div>
   <div class="group-body">
     <div class="group-meta">
-      ${s.httpMethod ? `<span>${esc(s.httpMethod)} ${esc(s.httpUrl ?? '')} → ${s.httpStatus ?? '?'}</span>` : ''}
+      ${s.httpMethod ? `<span>${esc(s.httpMethod)} ${esc(s.httpUrl ?? '')} → ${esc(String(s.httpStatus ?? '?'))}</span>` : ''}
       ${s.totalDuration != null ? `<span>Duration: ${esc(formatDuration(s.totalDuration))}</span>` : ''}
       <span>Logs: ${s.logCount}</span>
       <span>DB Queries: ${s.dbQueryCount}</span>
