@@ -18,6 +18,23 @@ import { generateSessionId, nowMs, DEFAULT_CORRELATION_CONFIG } from '@probe/cor
 import type { CorrelatorPort } from '@probe/core';
 import type { StoragePort, EventFilter } from '@probe/core';
 import type { SessionListOptions } from '@probe/core';
+import {
+  sessionsCreatedTotal,
+  sessionsDeletedTotal,
+  sessionsPurgedTotal,
+  sessionsActive,
+  sessionStatusChanges,
+  eventsIngestedTotal,
+  eventBatchSize,
+  eventIngestDuration,
+  correlatorRebuildsTotal,
+  correlatorRebuildDuration,
+  correlatorsCached,
+  correlatorEvictions,
+  purgeRunsTotal,
+  purgeDuration,
+  errorsTotal,
+} from '../lib/metrics.js';
 
 interface InMemoryEntry {
   correlator: CorrelatorPort;
@@ -56,15 +73,27 @@ export class SessionManager {
 
   /** Remove sessions older than TTL that are completed or errored */
   private async purgeStale(): Promise<void> {
-    const cutoff = nowMs() - SESSION_TTL_MS;
-    const sessions = await this.storage.listSessions();
-    for (const session of sessions) {
-      const status = session.status;
-      const lastActivity = session.endedAt ?? session.startedAt;
-      if ((status === 'completed' || status === 'error') && lastActivity < cutoff) {
-        await this.storage.deleteSession(session.id);
-        this.correlators.delete(session.id);
+    const start = performance.now();
+    purgeRunsTotal.inc();
+    try {
+      const cutoff = nowMs() - SESSION_TTL_MS;
+      const sessions = await this.storage.listSessions();
+      let purged = 0;
+      for (const session of sessions) {
+        const status = session.status;
+        const lastActivity = session.endedAt ?? session.startedAt;
+        if ((status === 'completed' || status === 'error') && lastActivity < cutoff) {
+          await this.storage.deleteSession(session.id);
+          this.correlators.delete(session.id);
+          purged++;
+        }
       }
+      if (purged > 0) sessionsPurgedTotal.inc(purged);
+      correlatorsCached.set(this.correlators.size);
+    } catch {
+      errorsTotal.inc({ type: 'purge_failure' });
+    } finally {
+      purgeDuration.observe((performance.now() - start) / 1000);
     }
   }
 
@@ -96,6 +125,8 @@ export class SessionManager {
     this.evictStaleCorrelators();
 
     await this.storage.saveSession(session);
+    sessionsCreatedTotal.inc();
+    correlatorsCached.set(this.correlators.size);
     return session;
   }
 
@@ -116,6 +147,8 @@ export class SessionManager {
     if (!existing) return false;
     await this.storage.deleteSession(id);
     this.correlators.delete(id);
+    sessionsDeletedTotal.inc();
+    correlatorsCached.set(this.correlators.size);
     return true;
   }
 
@@ -128,11 +161,21 @@ export class SessionManager {
       patch.endedAt = nowMs();
     }
 
+    sessionStatusChanges.inc({ from_status: existing.status, to_status: status });
+    if (status === 'capturing' || status === 'paused') {
+      sessionsActive.inc();
+    }
+    if ((existing.status === 'capturing' || existing.status === 'paused') &&
+        status !== 'capturing' && status !== 'paused') {
+      sessionsActive.dec();
+    }
+
     await this.storage.updateSessionStatus(id, status, patch);
     return this.storage.loadSession(id);
   }
 
   async ingestEvents(sessionId: string, events: ProbeEvent[]): Promise<number> {
+    const start = performance.now();
     const existing = await this.storage.loadSession(sessionId);
     if (!existing) return 0;
 
@@ -153,6 +196,14 @@ export class SessionManager {
     for (const event of events) {
       entry.correlator.ingest(event);
     }
+
+    // Metrics
+    eventBatchSize.observe(events.length);
+    eventIngestDuration.observe((performance.now() - start) / 1000);
+    for (const event of events) {
+      eventsIngestedTotal.inc({ source: event.source ?? 'unknown' });
+    }
+    correlatorsCached.set(this.correlators.size);
 
     // Notify listeners (WebSocket) — isolate failures per listener
     for (const listener of this.ingestListeners) {
@@ -227,6 +278,8 @@ export class SessionManager {
   }
 
   private async doRebuildCorrelator(sessionId: string): Promise<InMemoryEntry | undefined> {
+    const start = performance.now();
+    correlatorRebuildsTotal.inc();
     const session = await this.storage.loadSession(sessionId);
     if (!session) return undefined;
 
@@ -240,6 +293,8 @@ export class SessionManager {
     const entry: InMemoryEntry = { correlator, lastAccessed: Date.now() };
     this.correlators.set(sessionId, entry);
     this.evictStaleCorrelators();
+    correlatorRebuildDuration.observe((performance.now() - start) / 1000);
+    correlatorsCached.set(this.correlators.size);
     return entry;
   }
 
@@ -252,6 +307,8 @@ export class SessionManager {
     for (const [id] of toEvict) {
       this.correlators.delete(id);
     }
+    correlatorEvictions.inc(toEvict.length);
+    correlatorsCached.set(this.correlators.size);
   }
 
   onEventsIngested(listener: EventIngestListener): () => void {

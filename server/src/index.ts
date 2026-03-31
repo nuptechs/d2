@@ -13,6 +13,7 @@ import helmet from 'helmet';
 import { sessionsRouter } from './routes/sessions.js';
 import { eventsRouter } from './routes/events.js';
 import { reportsRouter } from './routes/reports.js';
+import { metricsRouter } from './routes/metrics.js';
 import { SessionManager } from './services/session-manager.js';
 import { setupWebSocket } from './ws/realtime.js';
 import { createAuthMiddleware } from './middleware/auth.js';
@@ -22,6 +23,14 @@ import { requestLogger } from './middleware/request-logger.js';
 import { logger } from './logger.js';
 import { createStorage } from '@probe/core';
 import type { StorageConfig } from '@probe/core';
+import { instrumentStorage } from './lib/instrumented-storage.js';
+import {
+  sessionsActive,
+  wsConnectionsActive,
+  correlatorsCached,
+  httpRequestsTotal,
+  errorsTotal,
+} from './lib/metrics.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -55,28 +64,43 @@ function buildStorageConfig(): StorageConfig {
 
 async function main(): Promise<void> {
   const storageConfig = buildStorageConfig();
-  const storage = createStorage(storageConfig);
+  const rawStorage = createStorage(storageConfig);
+  const storage = instrumentStorage(rawStorage, storageConfig.type);
   await storage.initialize();
   logger.info({ storage: storageConfig.type }, 'Storage initialized');
 
   const app = express();
 
+  // Metrics endpoint (before auth — scrapers don't carry tokens)
+  app.use(metricsRouter);
+
   // Health check (before auth/rate-limit) — minimal info for load balancers
   app.get('/health', async (_req, res) => {
     let storageOk = true;
     try {
-      // Lightweight probe — load at most 1 session to verify storage is alive
-      // Avoids loading ALL sessions which can saturate I/O under high session counts
       await storage.listSessionsPaginated({ limit: 1, offset: 0 });
     } catch {
       storageOk = false;
     }
     const status = storageOk ? 'ok' : 'degraded';
+
+    // Collect lightweight metric snapshot for health consumers
+    const totalRequests = (await httpRequestsTotal.get()).values.reduce((sum, v) => sum + v.value, 0);
+    const totalErrors = (await errorsTotal.get()).values.reduce((sum, v) => sum + v.value, 0);
+
     res.status(storageOk ? 200 : 503).json({
       status,
       version: '0.1.0',
       timestamp: new Date().toISOString(),
       storageOk,
+      metrics: {
+        activeSessions: (await sessionsActive.get()).values[0]?.value ?? 0,
+        activeWsConnections: (await wsConnectionsActive.get()).values[0]?.value ?? 0,
+        cachedCorrelators: (await correlatorsCached.get()).values[0]?.value ?? 0,
+        totalRequests,
+        totalErrors,
+        errorRate: totalRequests > 0 ? +(totalErrors / totalRequests * 100).toFixed(2) : 0,
+      },
     });
   });
   app.get('/ready', async (_req, res) => {

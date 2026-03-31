@@ -9,6 +9,15 @@ import type { SessionManager } from '../services/session-manager.js';
 import type { AuthConfig } from '../middleware/auth.js';
 import { verifyJwt, timingSafeKeyCheck } from '../middleware/auth.js';
 import { logger } from '../logger.js';
+import {
+  wsConnectionsActive,
+  wsConnectionsTotal,
+  wsConnectionsRejected,
+  wsMessagesReceived,
+  wsMessagesSent,
+  wsSubscriptionsActive,
+  errorsTotal,
+} from '../lib/metrics.js';
 
 interface SubscribeMessage {
   type: 'subscribe';
@@ -61,6 +70,7 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
         for (const event of events) {
           const msg: ServerMessage = { type: 'event', sessionId, event };
           ws.send(JSON.stringify(msg));
+          wsMessagesSent.inc();
         }
       } catch (err) {
         // Isolate per-client failures so remaining subscribers still receive events
@@ -113,6 +123,7 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
 
       if (!authenticated) {
         logger.warn({ ip: req.socket.remoteAddress }, 'WebSocket connection rejected: unauthorized');
+        wsConnectionsRejected.inc({ reason: 'auth' });
         ws.close(1008, 'Unauthorized');
         return;
       }
@@ -123,11 +134,14 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
     const currentCount = connectionsPerIp.get(ip) ?? 0;
     if (currentCount >= MAX_CONNECTIONS_PER_IP) {
       logger.warn({ ip, connections: currentCount }, 'WebSocket connection limit exceeded');
+      wsConnectionsRejected.inc({ reason: 'ip_limit' });
       ws.close(1008, 'Too many connections');
       return;
     }
     connectionsPerIp.set(ip, currentCount + 1);
     wsToIp.set(ws, ip);
+    wsConnectionsTotal.inc();
+    wsConnectionsActive.inc();
 
     // Origin validation — reject cross-origin WebSocket hijacking
     const allowedOrigins = (process.env['CORS_ORIGINS'] ?? '').split(',').map(s => s.trim()).filter(Boolean);
@@ -158,6 +172,7 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
       rate.count++;
       if (rate.count > RATE_LIMIT_MAX) {
         logger.warn({ ip: req.socket.remoteAddress, count: rate.count }, 'WebSocket rate limit exceeded');
+        wsConnectionsRejected.inc({ reason: 'rate_limit' });
         ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }));
         return;
       }
@@ -191,13 +206,20 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
             break;
           }
           subs.add(msg.sessionId);
+          wsSubscriptionsActive.inc();
+          wsMessagesReceived.inc({ type: 'subscribe' });
           ws.send(JSON.stringify({ type: 'subscribed', sessionId: msg.sessionId }));
           break;
         case 'unsubscribe':
-          subs.delete(msg.sessionId);
+          if (subs.has(msg.sessionId)) {
+            subs.delete(msg.sessionId);
+            wsSubscriptionsActive.dec();
+          }
+          wsMessagesReceived.inc({ type: 'unsubscribe' });
           ws.send(JSON.stringify({ type: 'unsubscribed', sessionId: msg.sessionId }));
           break;
         default:
+          wsMessagesReceived.inc({ type: 'unknown' });
           ws.send(JSON.stringify({ type: 'error', message: `Unknown message type` }));
       }
     });
@@ -214,9 +236,14 @@ export function setupWebSocket(server: HttpServer, sessionManager: SessionManage
       else connectionsPerIp.set(wsIp, count);
       wsToIp.delete(ws);
     }
+    const subs = subscriptions.get(ws);
+    if (subs && subs.size > 0) {
+      wsSubscriptionsActive.dec(subs.size);
+    }
     subscriptions.delete(ws);
     alive.delete(ws);
     messageCounts.delete(ws);
+    wsConnectionsActive.dec();
   }
 
   return wss;
